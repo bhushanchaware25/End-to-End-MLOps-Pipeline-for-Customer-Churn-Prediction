@@ -1,0 +1,54 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python -m src.ingestion.ingest
+    deps:
+      - src/ingestion/ingest.py
+    outs:
+      - data/raw/telco_churn.csv
+      - data/processed/telco_churn_processed.csv
+      - data/reference/reference_dataset.csv
+    metrics:
+      - data/processed/ingestion_metrics.json:
+          cache: false
+
+  validate:
+    cmd: python -m src.validation.validate
+    deps:
+      - src/validation/validate.py
+      - data/processed/telco_churn_processed.csv
+    outs:
+      - data/processed/validation_report.json:
+          cache: false
+
+  preprocess:
+    cmd: python -m src.preprocessing.preprocess
+    deps:
+      - src/preprocessing/preprocess.py
+      - data/processed/telco_churn_processed.csv
+    outs:
+      - data/processed/X_train.csv
+      - data/processed/X_test.csv
+      - data/processed/y_train.csv
+      - data/processed/y_test.csv
+      - models/preprocessor.pkl
+
+  train:
+    cmd: python -m src.training.train
+    deps:
+      - src/training/train.py
+      - data/processed/X_train.csv
+      - data/processed/y_train.csv
+      - models/preprocessor.pkl
+    outs:
+      - models/trained_models/
+
+  evaluate:
+    cmd: python -m src.evaluation.evaluate
+    deps:
+      - src/evaluation/evaluate.py
+      - data/processed/X_test.csv
+      - data/processed/y_test.csv
+    metrics:
+      - data/processed/evaluation_metrics.json:
+          cache: false
