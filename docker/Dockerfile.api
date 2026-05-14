@@ -1,0 +1,96 @@
+# ============================================================
+# ChurnShield MLOps — FastAPI Multi-Stage Dockerfile
+# ============================================================
+# Stage 1: Builder — installs Python deps
+# Stage 2: Runtime — lean final image
+# ============================================================
+
+# ── Stage 1: Builder ────────────────────────────────────────
+FROM python:3.10-slim AS builder
+
+# Build arguments for labeling
+ARG BUILD_DATE
+ARG VCS_REF
+
+# Install system build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    gcc \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment for clean dependency isolation
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Upgrade pip and install wheel for faster builds
+RUN pip install --upgrade pip wheel setuptools
+
+# Copy and install Python dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+
+# ── Stage 2: Runtime ────────────────────────────────────────
+FROM python:3.10-slim AS runtime
+
+# OCI Labels
+LABEL org.opencontainers.image.title="ChurnShield MLOps API"
+LABEL org.opencontainers.image.description="FastAPI service for Telco Customer Churn Prediction"
+LABEL org.opencontainers.image.authors="ChurnShield Team"
+LABEL org.opencontainers.image.source="https://github.com/your-username/churnshield-mlops"
+
+# Install runtime system deps only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN groupadd --gid 1001 appgroup && \
+    useradd --uid 1001 --gid appgroup --shell /bin/bash --create-home appuser
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY src/ ./src/
+COPY models/ ./models/ 2>/dev/null || true
+COPY data/ ./data/ 2>/dev/null || true
+
+# Create required runtime directories with correct ownership
+RUN mkdir -p logs monitoring/reports data/raw data/processed data/reference models && \
+    chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Environment defaults (overridden at runtime via .env or docker-compose)
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    API_HOST=0.0.0.0 \
+    API_PORT=8000 \
+    LOG_LEVEL=INFO \
+    MLFLOW_TRACKING_URI=http://mlflow:5000 \
+    MLFLOW_MODEL_NAME=ChurnShield-Model \
+    MODEL_STAGE=Production
+
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Start FastAPI with Uvicorn
+CMD ["uvicorn", "src.serving.app:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--log-level", "info", \
+     "--access-log"]
