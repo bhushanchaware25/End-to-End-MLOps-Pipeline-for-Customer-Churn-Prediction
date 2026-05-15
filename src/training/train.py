@@ -32,9 +32,9 @@ matplotlib.use("Agg")  # Non-interactive backend for server environments
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import mlflow
-import mlflow.sklearn
-import mlflow.xgboost
+import mlflow # type: ignore
+import mlflow.sklearn  # type: ignore
+import mlflow.xgboost  # type: ignore
 from loguru import logger
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
